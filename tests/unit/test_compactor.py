@@ -5,12 +5,10 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-from kama_claude.core.compact.compactor import Compactor
-from kama_claude.core.context import ExecutionContext
-from kama_claude.core.events.bus import EventBus
-from kama_claude.core.llm.types import LlmResponse, UsageStats
+from cogent.core.compact.compactor import Compactor
+from cogent.core.context import ExecutionContext
+from cogent.core.events.bus import EventBus
+from cogent.core.llm.types import LlmResponse, UsageStats
 
 
 def _stub_provider(summary: str = "## 1. Original Goal\nTest\n## 2. Completed Steps\n- done") -> Any:
