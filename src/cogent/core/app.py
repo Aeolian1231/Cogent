@@ -259,6 +259,8 @@ class CoreApp:
             self._broadcaster,
             trace=self._trace,
         )
+
+        # 注册调用函数
         server.register("core.ping", self._ping_handler)
         server.register("agent.run", self._agent_run_handler)
         server.register("event.subscribe", self._subscribe_handler)
@@ -275,9 +277,10 @@ class CoreApp:
 
         loop = asyncio.get_running_loop()
         shutdown = asyncio.Event()
+
+        # 设置退出信号，绑定ctrl-c/kill
         loop.add_signal_handler(signal.SIGINT, shutdown.set)
         loop.add_signal_handler(signal.SIGTERM, shutdown.set)
-
         await shutdown.wait()
 
         logger.info("shutting down")

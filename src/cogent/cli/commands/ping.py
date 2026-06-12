@@ -14,6 +14,7 @@ from cogent.core.config import CogentConfig
 # 同步入口：运行 ping 协程，连接失败时打印错误并退出
 def cmd_ping(config: CogentConfig) -> None:
     try:
+        # 客户端可以同步写，但服务器需要处理并发连接和重叠请求，必须异步
         asyncio.run(_ping(config))
     except (ConnectionRefusedError, OSError):
         print(f"error: core not running ({config.host}:{config.port})", file=sys.stderr)
@@ -21,10 +22,12 @@ def cmd_ping(config: CogentConfig) -> None:
 
 
 # 向 core 守护进程发送 ping 请求，打印 pong 响应及延迟
+# 创建一个协程，await()多次
 async def _ping(config: CogentConfig) -> None:
     t0 = time.monotonic()
+    # 建立tcp连接
     reader, writer = await asyncio.open_connection(config.host, config.port)
-
+    
     req = {
         "jsonrpc": "2.0",
         "id": "cli-1",
@@ -32,8 +35,9 @@ async def _ping(config: CogentConfig) -> None:
         "params": {"client": f"cli/{cogent.__version__}"},
     }
     writer.write((json.dumps(req) + "\n").encode())
-    await writer.drain()
+    await writer.drain() # 确保数据写入发送缓冲区
 
+    # 10s超时
     line = await asyncio.wait_for(reader.readline(), timeout=10.0)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
@@ -46,6 +50,7 @@ async def _ping(config: CogentConfig) -> None:
         print(f"error: {err.error.code} {err.error.message}", file=sys.stderr)
         sys.exit(1)
 
+    # 反序列化两层协议：JSON-RPC + NDJSON
     resp = JsonRpcSuccess.model_validate(raw)
     result = PongResult.model_validate(resp.result)
     print(f"pong server={result.server_version} uptime={result.uptime_ms}ms latency={latency_ms}ms")

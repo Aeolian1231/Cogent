@@ -6,6 +6,7 @@ from pydantic import BaseModel, Discriminator
 
 from cogent.core.session.model import SessionMode, SessionStatus
 
+# 服务端调用，解析调用命令
 
 class PingCommand(BaseModel):
     type: Literal["core.ping"] = "core.ping"

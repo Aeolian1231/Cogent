@@ -135,7 +135,7 @@ class SocketServer:
                 return
 
             # 每条命令独立作为 task 执行，避免长时间运行的 handler（如 session.send_message）
-            # 阻塞读循环，使 permission.respond 等并发命令能被及时处理
+            # 只是加入待处理队列，不阻塞读循环，立刻读下一行
             asyncio.create_task(self._handle_line(line, writer))
 
     # 解析单行 JSON-RPC 请求并调用对应 handler，将结果或错误写回客户端
@@ -152,6 +152,7 @@ class SocketServer:
             await self._send(writer, make_error(None, INVALID_REQUEST, "Invalid Request", str(e)))
             return
 
+        # 记录请求日志
         if self._trace is not None:
             client_id = str(writer.get_extra_info("peername", "<unknown>"))
             self._trace.emit(
@@ -165,6 +166,7 @@ class SocketServer:
                 )
             )
 
+        # 调用对应 handler
         handler = self._handlers.get(req.method)
         if handler is None:
             await self._send(
@@ -173,6 +175,7 @@ class SocketServer:
             )
             return
 
+        # 获取向客户端推送结果的字节流
         _writer_var.set(writer)
         try:
             result = await handler(req.params)
