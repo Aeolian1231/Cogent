@@ -81,7 +81,7 @@ class SocketClient:
                     fut.cancel()
             self._pending.clear()
 
-    # 解析单行消息并路由到 pending future（RPC 响应）或 event handler（服务器推送）
+    # 解析单行消息并路由到 pending future（RPC 响应：发起一次响应一次）或 event handler（服务器主动推送：LLM用量/权限审批/日志/工具调用等不确定事件）
     async def _dispatch(self, line: bytes) -> None:
         try:
             msg: dict[str, Any] = json.loads(line)
@@ -91,7 +91,7 @@ class SocketClient:
         if "jsonrpc" in msg:
             req_id: str | None = msg.get("id")
             if req_id and req_id in self._pending:
-                fut = self._pending.pop(req_id)
+                fut = self._pending.pop(req_id)  # 从 pending 中取出任务
                 if not fut.done():
                     if "error" in msg:
                         err = msg["error"]
@@ -100,7 +100,12 @@ class SocketClient:
                         )
                     else:
                         fut.set_result(msg.get("result") or {})
+        # 执行所有注册的 event handler
         elif msg.get("kind") == "event":
             event_data: dict[str, Any] = msg.get("event", {})
             for handler in self._event_handlers:
                 await handler(event_data)
+        else:
+        # 未知消息格式：可能来自未来版本 daemon 或数据损坏
+            logger.warning("unknown message format: %s", 
+                   _preview(json.dumps(msg), 120))

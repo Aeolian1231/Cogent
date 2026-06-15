@@ -75,6 +75,8 @@ async def _run_async(goal: str, config: CogentConfig) -> int:
     finished = asyncio.Event()
     exit_code = 0
 
+    # 使用闭包捕获上述变量，实现异步回调（类似LAMBDA表达式）
+    # 注册打印函数
     async def on_event(event: dict[str, Any]) -> None:
         nonlocal exit_code
         await printer.handle(event)
@@ -83,7 +85,9 @@ async def _run_async(goal: str, config: CogentConfig) -> int:
                 exit_code = 1
             finished.set()
 
+    # 注册事件处理函数（这里 on_event 是终端打印函数）
     client.on_event(on_event)
+    # 启动事件循环
     loop_task = asyncio.create_task(client.run_event_loop())
 
     try:

@@ -94,10 +94,11 @@ class AnthropicProvider:
 
         text_parts: list[str] = []
         final_message: Any = None
-
+        # 传输中途断连重试机制：最多重试 _MAX_STREAM_RETRIES 次，每次间隔 _RETRY_BACKOFF_S[i] 秒
         for attempt in range(1, _MAX_STREAM_RETRIES + 1):
             text_parts = []
             try:
+                # 流式传输：逐 token 发布事件（响应一字字出现原因）
                 async with self._client.messages.stream(**kwargs) as stream:
                     async for text in stream.text_stream:
                         # Only publish token events on the first attempt to avoid TUI duplicates
@@ -141,6 +142,7 @@ class AnthropicProvider:
 
         tool_calls: list[ToolCallBlock] = []
         thinking_blocks: list[dict[str, object]] = []
+        # 提取工具调用信息
         for block in final_message.content:
             if block.type == "tool_use":
                 tool_calls.append(

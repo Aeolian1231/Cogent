@@ -47,11 +47,12 @@ def main() -> None:
 
     config = get_config()
     setup_logging(config)
-
+    # 分发到对应子命令
     if args.command == "ping":
         cmd_ping(config)
     elif args.command == "chat":
         cmd_chat(config)
+    # 运行任务
     elif args.command == "run":
         cmd_run(args.goal, config)
     elif args.command == "core":

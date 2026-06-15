@@ -135,11 +135,12 @@ class AgentRunner:
                     registry.register(mcp_tool)
         return registry
 
-    # 执行一次完整的 agent run（委托给 run_and_capture，忽略返回值）
-    async def run(self, goal: str, *, run_id: str | None = None) -> None:
-        await self.run_and_capture(goal, run_id=run_id)
+    # # 执行一次完整的 agent run（委托给 run_and_capture，忽略返回值）
+    # async def run(self, goal: str, *, run_id: str | None = None) -> None:
+    #     await self.run_and_capture(goal, run_id=run_id)
 
     # 执行 agent run 并返回 RunOutcome（含最终文字结果）
+    # 总线控制
     async def run_and_capture(
         self,
         goal: str,
@@ -150,8 +151,13 @@ class AgentRunner:
         system_prompt_override: str | None = None,
         tool_whitelist: list[str] | None = None,
     ) -> RunOutcome:
+
+        # chat / one_shot 模式区分
+        is_chat = session is not None and store is not None
+        # is_one_shot = not is_chat
+
         run_id = run_id or new_run_id()
-        if session is not None and store is not None:
+        if is_chat:
             run_path = store.runs_dir(session.id) / run_id
             history = store.read_messages(session.id)
             notes = store.read_notes(session.id)
@@ -161,15 +167,17 @@ class AgentRunner:
             notes = ""
         run_path.mkdir(parents=True, exist_ok=True)
 
+        # 加载全局上下文和项目上下文
         global_ctx = load_context_file(Path("~/.cogent/context.md").expanduser())
         project_ctx = load_context_file(Path(".cogent/context.md"))
-
         task_manager = TaskManager(run_path / ".tasks")
 
+        # 建立事件总线，订阅所有监听者
         bus = self._bus if self._bus is not None else EventBus()
         for h in self._extra_handlers:
             bus.subscribe(h)
 
+        # 构建执行上下文
         context = ExecutionContext(
             run_id=run_id,
             goal=goal,
@@ -180,14 +188,17 @@ class AgentRunner:
             project_context=project_ctx,
             system_prompt_override=system_prompt_override,
         )
+
+        # 计算预填充消息长度
         prefill_len = len(history)
 
         async with EventWriter(run_path / "events.jsonl") as writer:
-            writer.subscribe(bus)
+            bus.subscribe(writer.handle)
             await bus.publish(RunStartedEvent(run_id=run_id, goal=goal, ts=_now()))
 
             cancelled = False
             try:
+                # 准备LLM
                 provider: LLMProvider = self._provider or AnthropicProvider(
                     self._config.llm.default_model
                 )
@@ -197,12 +208,12 @@ class AgentRunner:
                         self._trace,
                         include_payload=self._config.trace.include_llm_payload,
                     )
-                session_id_str = session.id if session is not None else ""
+                session_id_str = session.id if is_chat else ""
+                # 确定子agent运行目录
                 child_runs_dir = (
-                    store.runs_dir(session.id)
-                    if session is not None and store is not None
-                    else self._runs_dir
+                    store.runs_dir(session.id) if is_chat else self._runs_dir
                 )
+                # 构建工具注册表
                 registry = self._build_registry(
                     task_manager,
                     session=session,
@@ -215,10 +226,9 @@ class AgentRunner:
                     tool_whitelist=tool_whitelist,
                 )
                 session_dir = (
-                    store.session_dir(session.id)
-                    if session is not None and store is not None
-                    else run_path
+                    store.session_dir(session.id) if is_chat else run_path
                 )
+                # 构建上下文压缩器
                 compactor = Compactor(bus, session_dir, session_id_str)
                 loop = AgentLoop(
                     provider, registry, bus,
@@ -227,7 +237,10 @@ class AgentRunner:
                     compact_threshold=self._config.compaction.auto_threshold,
                     session_id=session_id_str,
                 )
+
+                # 执行 agent run
                 await loop.run(context)
+
             except asyncio.CancelledError:
                 cancelled = True
                 if not context.is_done():
@@ -248,10 +261,12 @@ class AgentRunner:
                     ts=_now(),
                 )
             )
-
-        if session is not None and store is not None:
+            
+        # 保存本次会话历史
+        if is_chat:
             store.append_messages(session.id, context.messages[prefill_len:], run_id=run_id)
-
+        
+        # 等文件关闭之后再抛出，防止文件处于打开状态时进程被终止。
         if cancelled:
             raise asyncio.CancelledError()
 

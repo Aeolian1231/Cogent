@@ -52,7 +52,7 @@ class AgentLoop:
                 StepStartedEvent(run_id=context.run_id, step=context.step, ts=_now())
             )
 
-            # [plan] call LLM — API errors terminate the run
+            # [plan] call LLM -- 让LLM思考下一步
             try:
                 response = await self._provider.chat(
                     messages=context.messages,
@@ -77,18 +77,19 @@ class AgentLoop:
                 context.mark_failed("llm_error")
                 break
 
-            # [observe] append assistant content blocks to context
+            # [observe] -- 把响应添加到上下文历史
             # thinking blocks must come first and be preserved verbatim for extended thinking mode
             blocks: list[dict[str, object]] = list(response.thinking_blocks)
             if response.text:
                 blocks.append({"type": "text", "text": response.text})
+            # 追加工具调用
             for tc in response.tool_calls:
                 blocks.append(
                     {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input}
                 )
             context.add_assistant_message(blocks)
 
-            # [act] execute each requested tool; errors become tool results so loop continues
+            # [act] -- 若LLM要求调用工具，执行工具调用
             if response.stop_reason == "tool_use":
                 for tc in response.tool_calls:
                     result = await invoke_tool(
@@ -97,6 +98,7 @@ class AgentLoop:
                         session_id=self._session_id,
                     )
                     context.add_tool_result(tc.id, result.content, is_error=result.is_error)
+            # max_tokens limit hit
             elif response.stop_reason == "max_tokens" and response.tool_calls:
                 # Output token limit hit mid-tool-call; input is incomplete.
                 # Add synthetic error results so the conversation stays balanced.
@@ -108,7 +110,7 @@ class AgentLoop:
                         is_error=True,
                     )
 
-            # Termination check — end_turn wins over max_steps if both hit on same step
+            # [observe] -- 检查是否结束循环
             if response.stop_reason == "end_turn":
                 context.result = response.text or ""
                 context.mark_success()

@@ -17,3 +17,7 @@ uv.lock
 *.log
 workspace/
 docs/
+AGENT.md
+CLAUDE.md
+RUNBOOK.md
+WIRE_PROTOCOL.md

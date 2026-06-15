@@ -102,6 +102,7 @@ async def invoke_tool(
                 "schema_error", str(exc), elapsed(),
             )
 
+    # 权限检查
     if permission_manager is not None:
         async def _emit_permission(raw: dict[str, Any]) -> None:
             await bus.publish(PermissionRequestedEvent(**raw, run_id=run_id))

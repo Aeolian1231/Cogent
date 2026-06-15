@@ -38,6 +38,3 @@ class EventWriter:
         except (OSError, ValueError) as e:
             logger.error("EventWriter: failed to write event: %s", e)
 
-    # 将 handle 注册为 bus 的订阅者
-    def subscribe(self, bus: EventBus) -> None:
-        bus.subscribe(self.handle)

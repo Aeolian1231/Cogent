@@ -174,9 +174,10 @@ class SocketServer:
                 make_error(req.id, METHOD_NOT_FOUND, f"Method not found: {req.method}"),
             )
             return
-
-        # 获取向客户端推送结果的字节流
+            
+        # 获取向客户端推送结果的流
         _writer_var.set(writer)
+        # 调用 handler 处理
         try:
             result = await handler(req.params)
         except HandlerError as e:

@@ -171,7 +171,7 @@ class SpawnAgentTool(BaseTool):
             )
 
         async with EventWriter(child_run_path / "events.jsonl") as writer:
-            writer.subscribe(child_bus)
+            child_bus.subscribe(writer.handle)
             await child_loop.run(child_context)
 
         await self._parent_bus.publish(
@@ -206,7 +206,7 @@ class SpawnAgentTool(BaseTool):
         run_id: str,
     ) -> None:
         async with EventWriter(run_path / "events.jsonl") as writer:
-            writer.subscribe(bus)
+            bus.subscribe(writer.handle)
             await loop.run(context)
         await self._parent_bus.publish(
             SubagentFinishedEvent(

@@ -66,7 +66,7 @@ async def test_event_writer_subscribe_via_bus(tmp_path: Path) -> None:
     event = RunStartedEvent(run_id="r1", goal="g", ts="2026-05-11T00:00:00Z")
 
     async with EventWriter(path) as writer:
-        writer.subscribe(bus)
+        bus.subscribe(writer.handle)
         await bus.publish(event)
 
     lines = path.read_text().strip().splitlines()
