@@ -35,3 +35,15 @@ Anthropic 的 prompt caching 功能：如果相邻两次 API 调用的 system pr
 ## 事件模型
 所有事件都是 pydantic 模型，即用 Python 类定义的带类型校验的数据结构
 包括 校验（创建时检查参数类型） 序列化  自动类型分配
+
+## writer获取
+每个连接建立时 asyncio.start_server 内部创建一个 writer，用于发送数据
+每个协程Task有自己的context（python 3.7+），同一连接对应的多个Task的writer是同一个
+每个任务将writer存入context，业务处理逻辑中get_connection_writer()从context获取writer
+
+## 重连 ？
+
+
+## Token 缓冲
+LLM 流式生成时，llm.token 事件密集出现，每个只有一两个字符。每个 token 单独调一次 RichLog.write() 会导致屏幕频繁闪烁。
+解决方案：收到 llm.token 只追加到内部字符串，不写屏；等到下一个非 token 事件来时，先把积攒的内容整体写入一行

@@ -193,6 +193,8 @@ class AgentRunner:
         prefill_len = len(history)
 
         async with EventWriter(run_path / "events.jsonl") as writer:
+            
+            # 先推送消息再初始化，防止客户端什么都不知道
             bus.subscribe(writer.handle)
             await bus.publish(RunStartedEvent(run_id=run_id, goal=goal, ts=_now()))
 
