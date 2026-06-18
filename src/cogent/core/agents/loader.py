@@ -31,7 +31,7 @@ class AgentProfileLoader:
     # 返回 [项目本地, 用户全局, 内建] 路径；load() 返回第一个存在的，项目本地优先级最高
     def _search_paths(self, name: str) -> list[Path]:
         builtin = self._BUILTIN_DIR / f"{name}.toml"
-        global_ = Path("~/.cogent/agents").expanduser() / f"{name}.toml"
+        global_ = Path(".cogent/agents").expanduser() / f"{name}.toml"
         local = Path(".cogent/agents") / f"{name}.toml"
         return [local, global_, builtin]
 

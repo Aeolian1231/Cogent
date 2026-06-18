@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_DEFAULT_POLICY_PATH = Path("~/.cogent/policy.toml")
+_DEFAULT_POLICY_PATH = Path(".cogent/policy.toml")
 
 
 # 加载 policy.toml 中 [always] 节，返回 {tool_name: "allow"/"deny"}；文件不存在时返回空字典
@@ -34,7 +34,7 @@ def save_policy_file(always: dict[str, str], path: Path | None = None) -> None:
     p = (path or _DEFAULT_POLICY_PATH).expanduser()
     p.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "# ~/.cogent/policy.toml",
+        "# .cogent/policy.toml",
         "# 由 cogent-core 自动管理，手动编辑生效但格式须正确",
         "",
         "[always]",

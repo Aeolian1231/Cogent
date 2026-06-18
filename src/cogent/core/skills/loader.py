@@ -81,7 +81,7 @@ class SkillLoader:
     def _search_paths(self, name: str) -> list[Path]:
         dirs = [
             Path(".cogent/skills"),
-            Path("~/.cogent/skills").expanduser(),
+            Path(".cogent/skills").expanduser(),
             self._BUILTIN_DIR,
         ]
         paths: list[Path] = []
@@ -95,7 +95,7 @@ class SkillLoader:
         seen: dict[str, None] = {}
         for d in [
             self._BUILTIN_DIR,
-            Path("~/.cogent/skills").expanduser(),
+            Path(".cogent/skills").expanduser(),
             Path(".cogent/skills"),
         ]:
             if d.exists():
@@ -110,7 +110,7 @@ class SkillLoader:
         seen: dict[str, Skill] = {}
         for d in [
             self._BUILTIN_DIR,
-            Path("~/.cogent/skills").expanduser(),
+            Path(".cogent/skills").expanduser(),
             Path(".cogent/skills"),
         ]:
             if d.exists():

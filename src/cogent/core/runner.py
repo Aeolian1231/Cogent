@@ -168,7 +168,7 @@ class AgentRunner:
         run_path.mkdir(parents=True, exist_ok=True)
 
         # 加载全局上下文和项目上下文
-        global_ctx = load_context_file(Path("~/.cogent/context.md").expanduser())
+        global_ctx = load_context_file(Path(".cogent/context.md").expanduser())
         project_ctx = load_context_file(Path(".cogent/context.md"))
         task_manager = TaskManager(run_path / ".tasks")
 

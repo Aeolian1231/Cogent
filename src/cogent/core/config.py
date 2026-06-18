@@ -11,12 +11,12 @@ from dotenv import load_dotenv
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 7437
 _DEFAULT_LOG_LEVEL = "INFO"
-_DEFAULT_LOG_FILE = "~/.cogent/logs/core.log"
+_DEFAULT_LOG_FILE = ".cogent/logs/core.log"
 _DEFAULT_LOG_FORMAT = "text"
-_DEFAULT_CONFIG_PATH = "~/.cogent/config.toml"
+_DEFAULT_CONFIG_PATH = ".cogent/config.toml"
 _DEFAULT_MAX_STEPS = 20
 _DEFAULT_MODEL = "claude-sonnet-4-6"
-_DEFAULT_TRACE_FILE = "~/.cogent/traces/daemon.jsonl"
+_DEFAULT_TRACE_FILE = ".cogent/traces/daemon.jsonl"
 
 
 @dataclass

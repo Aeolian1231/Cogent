@@ -9,7 +9,7 @@ from pathlib import Path
 from cogent.core.config import get_config
 from cogent.tui.app import CogentTuiApp
 
-_DEFAULT_TUI_LOG = "~/.cogent/logs/tui.log"
+_DEFAULT_TUI_LOG = ".cogent/logs/tui.log"
 
 
 # TUI 文件日志初始化：不写 stderr（避免干扰 Textual 渲染），只写滚动文件

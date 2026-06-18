@@ -183,7 +183,7 @@ class CoreApp:
     ) -> int:
         path = events_file(run_id)
         if not path.exists():
-            for candidate in Path("~/.cogent/sessions").expanduser().glob(
+            for candidate in Path(".cogent/sessions").expanduser().glob(
                 f"*/runs/{run_id}/events.jsonl"
             ):
                 path = candidate
@@ -222,7 +222,7 @@ class CoreApp:
             await self._trace.start()
             self._bus.subscribe(self._trace_event_handler)
 
-        policy_file = Path("~/.cogent/policy.toml").expanduser()
+        policy_file = Path(".cogent/policy.toml").expanduser()
         self._permission_manager = PermissionManager(
             policy_file=policy_file,
             timeout_s=self._config.permission.timeout_s,
@@ -235,7 +235,7 @@ class CoreApp:
 
         self._broadcaster = IpcEventBroadcaster(trace=self._trace)
         self._bus.subscribe(self._broadcaster.handle) # 注册IPC广播函数
-        sessions_root = Path("~/.cogent/sessions").expanduser()
+        sessions_root = Path(".cogent/sessions").expanduser()
         store = SessionStore(sessions_root)
         assert self._config is not None
         compact_provider = AnthropicProvider(self._config.llm.default_model)
