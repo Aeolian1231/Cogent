@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import logging
 import logging.handlers
 import os
@@ -31,19 +30,11 @@ def _setup_logging(level: str) -> None:
     root.addHandler(handler)
 
 
-# cogent-tui 入口：解析 --replay 参数后启动 TUI 应用
+# cogent-tui 入口
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="cogent-tui", description="Cogent TUI")
-    parser.add_argument(
-        "--replay",
-        metavar="RUN_ID",
-        help="Replay events from a past run on connect",
-    )
-    args = parser.parse_args()
-
     config = get_config()
     _setup_logging(config.logging.level)
-    app = CogentTuiApp(config.host, config.port, replay_run_id=args.replay)
+    app = CogentTuiApp(config.host, config.port)
     app.run()
 
 

@@ -43,7 +43,7 @@ class SocketClient:
             except TimeoutError:
                 pass
 
-    # 注册服务器推送事件的回调，可多次调用以添加多个 handler
+    # 注册服务器推送事件的回调
     def on_event(self, handler: EventHandler) -> None:
         self._event_handlers.append(handler)
 

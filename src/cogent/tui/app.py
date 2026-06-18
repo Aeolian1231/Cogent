@@ -502,11 +502,11 @@ class CogentTuiApp(App[None]):
     )
 
     # 初始化连接参数和 TUI 内部状态
-    def __init__(self, host: str, port: int, replay_run_id: str | None = None) -> None:
+    def __init__(self, host: str, port: int) -> None:
         super().__init__()
         self._host = host
         self._port = port
-        self._replay_run_id = replay_run_id
+        self._active_run_id: str | None = None  # 当前活跃 run，重连时用于回放
         self._client: SocketClient | None = None
         self._current_llm: LLMStreamBlock | None = None
         self._pending_tool_blocks: dict[str, ToolCallBlock] = {}
@@ -609,7 +609,8 @@ class CogentTuiApp(App[None]):
             except (IpcError, RuntimeError, OSError):
                 self._append(Static("[yellow]warning: failed to close session[/yellow]"))
         self.exit()
-
+        
+    # TUI 应用主循环，Textual 框架调用
     # 将输入框提交内容发送给当前 chat session；用 worker 发送，避免 await 阻塞 App 消息泵
     async def on_chat_text_area_submitted(self, event: ChatTextArea.Submitted) -> None:
         content = event.value.strip()
@@ -787,7 +788,9 @@ class CogentTuiApp(App[None]):
                     if not t.cancelled() and t.exception() is not None
                     else None
                 )
-                params: dict[str, Any] = {
+                # 先订阅事件，再创建 session。
+                # 如果反过来，daemon 可能已经广播了 session.created，客户端才开始订阅，第一条事件就丢了
+                params: dict[str, Any] = {   
                     "topics": [
                         "session.*",
                         "run.*",
@@ -803,19 +806,36 @@ class CogentTuiApp(App[None]):
                     ],
                     "scope": "global",
                 }
-                if self._replay_run_id is not None:
-                    params["replay_from_run"] = self._replay_run_id
+                # 重连时回放当前活跃 run 的历史事件（如有）
+                if self._active_run_id is not None:
+                    params["replay_from_run"] = self._active_run_id
                 await client.send_command("event.subscribe", params)
-                created = await client.send_command("session.create", {"mode": "chat"})
-                self._session_id = str(created["session_id"])
-                log.info("session created session_id=%s", self._session_id)
+
+                # 重连时复用已有 session，仅首次连接创建新 session
+                if self._session_id is None:
+                    created = await client.send_command("session.create", {"mode": "chat"})
+                    self._session_id = str(created["session_id"])
+                    log.info("session created session_id=%s", self._session_id)
+                else:
+                    log.info("reusing session_id=%s", self._session_id)
+
+                # 重连后根据活跃 run 恢复 prompt 状态：有活跃 run 则保持 busy，否则恢复 ready
                 prompt = self._prompt()
-                if prompt is not None:
-                    prompt.disabled = False
-                    prompt.read_only = False
-                    prompt.border_title = "type a message — enter to send, ⌘/⇧/⌥+enter for newline"
-                    prompt.focus()
-                self._update_header("ready")
+                if self._active_run_id is not None:
+                    self._busy = True
+                    if prompt is not None:
+                        prompt.disabled = True
+                        prompt.read_only = True
+                        prompt.border_title = "running, waiting for response..."
+                    self._update_header("running")
+                else:
+                    self._busy = False
+                    if prompt is not None:
+                        prompt.disabled = False
+                        prompt.read_only = False
+                        prompt.border_title = "type a message — enter to send, ⌘/⇧/⌥+enter for newline"
+                        prompt.focus()
+                    self._update_header("ready")
                 await loop_task
             except IpcError as e:
                 header.update(f"[bold]Cogent[/bold]  [red]subscribe error: {e}[/red]")
@@ -823,7 +843,6 @@ class CogentTuiApp(App[None]):
                 if not loop_task.done():
                     loop_task.cancel()
                 self._client = None
-                self._session_id = None
                 prompt = self._prompt()
                 if prompt is not None:
                     prompt.disabled = True
@@ -846,6 +865,7 @@ class CogentTuiApp(App[None]):
     def _handle_event_inner(self, event: dict[str, Any]) -> None:
         t = event.get("type", "")
 
+        # llm.token 事件：只缓冲，不渲染
         if t == "llm.token":
             token = event.get("token", "")
             if self._current_llm is None:
@@ -855,6 +875,7 @@ class CogentTuiApp(App[None]):
             self._current_llm.append_token(token)
             return
 
+        # 非 token 事件：先冲刷缓冲区，再渲染
         self._break_llm()
 
         if t == "session.waiting_for_input":
@@ -868,6 +889,7 @@ class CogentTuiApp(App[None]):
             self._update_header("ready")
 
         elif t == "session.closed":
+            self._session_id = None
             self._busy = False
             prompt = self._prompt()
             if prompt is not None:
@@ -879,6 +901,7 @@ class CogentTuiApp(App[None]):
         elif t == "run.started":
             run_id = event.get("run_id", "")
             goal = event.get("goal", "")
+            self._active_run_id = run_id
             self._append(Static(
                 f"[dim]run[/dim]  [cyan]{run_id}[/cyan]  [dim]{_preview(goal, 96)}[/dim]",
                 classes="run-header",
@@ -961,6 +984,7 @@ class CogentTuiApp(App[None]):
                 tc_done.set_result(error_msg, elapsed_ms, is_error=True)
 
         elif t == "run.finished":
+            self._active_run_id = None
             status = event.get("status", "")
             steps = event.get("steps", 0)
             reason = event.get("reason") or ""
@@ -1056,6 +1080,6 @@ class CogentTuiApp(App[None]):
 
 
 # TUI 入口：读取配置并启动 CogentTuiApp
-def run(config: CogentConfig, replay_run_id: str | None = None) -> None:
-    app = CogentTuiApp(config.host, config.port, replay_run_id=replay_run_id)
+def run(config: CogentConfig) -> None:
+    app = CogentTuiApp(config.host, config.port)
     app.run()

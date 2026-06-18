@@ -1,7 +1,7 @@
 ## question？
 当前实现两个终端分别启动tui会互相影响，cli也会影响tui，修改该问题
-断线重连逻辑
-客户端喜爱那个daemon通信逻辑
+
+客户端-daemon通信逻辑
 
 ## 为什么使用 asyncio 协程而非多线程？
 
@@ -127,6 +127,14 @@ events.jsonl 用于客户端重连时回放历史事件
 ✗ 每条是 TraceRecord 包装，需要提取 data 字段才是原始事件
 ✗ 全表扫描，O(n) 且 n 持续增长
 
+## events.jsonl 和 thread.jsonl
+
+两者对比
+events.jsonl	                            thread.jsonl
+粒度	per-run：runs/<run_id>/	              per-session：<session_id>/
+内容	事件流：step.、tool.、llm.token       对话流：user 消息、assistant 回复
+用途	TUI 重连回放、daemon 重启后重建 LLM     对话上下文，传给下一次 API 调用
+
 ## 为什么不用数据库
 
 任务数量通常是个位数到十几个，文件 I/O 的开销完全可以忽略。用文件的好处是：任务的完整历史可以直接用 ls 和 cat 查看，不需要任何工具，调试非常方便。
@@ -173,3 +181,16 @@ step N:
   → LLM: [write_file("/tmp/report.md", content="...")]
   → task_update(N, "completed")
   → end_turn
+
+## 重连机制
+
+TUI 内部有一个永不退出的 _socket_loop 循环，TCP 断线后自动等待 2 秒重试，不退出进程。重连过程分三步：接会话 → 补事件 → 同步状态。
+
+第一步：接上旧会话。 重连时如果内存里还有 _session_id（说明之前已经建过会话），就不创建 session，直接用旧 id 继续通信。daemon 那边的 session 在 TCP 断线后依旧存活，重连后发的 send_message 能正常路由到同一会话。如果 daemon 也重启过、内存里丢了 session，它会从磁盘 meta.json 自动恢复。
+
+第二步：补回错过的事件。 如果当前有活跃 run（_active_run_id 非空），订阅事件时带上 replay_from_run，daemon 从 events.jsonl 把断线期间产生的事件一次性推回来。TUI 逐条重放后 UI 与断线前一致——工具调用块、LLM 输出、步骤进度全部还原。_active_run_id 由 run.started 设置、run.finished 清空，全程自动追踪。
+
+第三步：恢复交互状态。 重放完历史事件后，根据 _active_run_id 决定 prompt 状态：有活跃 run 就设为 busy 并禁用输入框；run 已结束或空闲就启用输入框，用户可以继续对话。
+
+覆盖范围
+当前机制只覆盖同一 TUI 进程内的 TCP 断线重连、daemon崩溃重启。TUI 进程崩溃重启后内存全丢，_session_id 和 _active_run_id 都是 None，会走首次连接路径——新建 session、不回放历史、UI 空白。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
 SESSION_NOT_FOUND = -32010
 SESSION_CLOSED = -32011
 SESSION_BUSY = -32012
+
+logger = logging.getLogger(__name__)
 
 
 # 返回当前 UTC 时间的 ISO 8601 字符串
@@ -189,9 +192,19 @@ class SessionManager:
         self._get_session(sid)
         return self._store.read_messages(sid)
 
-    # 从内存索引取 session，不存在时抛 JSON-RPC 结构化错误
+    # 从内存索引取 session，不存在时尝试从磁盘 meta.json 恢复
     def _get_session(self, sid: str) -> Session:
         session = self._sessions.get(sid)
-        if session is None:
+        if session is not None:
+            return session
+        # daemon 重启后内存为空，从磁盘恢复
+        try:
+            session = self._store.read_meta(sid)
+            if session.status == "closed":
+                return session  # 已关闭的 session 不恢复到内存
+            self._sessions[sid] = session
+            self._locks[sid] = asyncio.Lock()
+            logger.info("restored session %s from disk", sid)
+            return session
+        except (FileNotFoundError, KeyError, ValueError):
             raise HandlerError(SESSION_NOT_FOUND, "session not found")
-        return session
