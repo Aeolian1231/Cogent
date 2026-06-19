@@ -81,11 +81,11 @@ class AgentRunner:
         self,
         task_manager: TaskManager,
         *,
-        session: Session | None = None,
-        store: SessionStore | None = None,
-        run_id: str | None = None,
-        provider: LLMProvider | None = None,
-        bus: EventBus | None = None,
+        session: Session,
+        store: SessionStore,
+        run_id: str,
+        provider: LLMProvider,
+        bus: EventBus,
         child_runs_dir: Path | None = None,
         session_id: str = "",
         tool_whitelist: list[str] | None = None,
@@ -107,26 +107,24 @@ class AgentRunner:
         ]:
             if _ok(t.name):
                 registry.register(t)
-        if session is not None and store is not None and run_id is not None:
-            note_tool = NoteSaveTool(store, session.id, run_id)
-            if _ok(note_tool.name):
-                registry.register(note_tool)
-        if provider is not None and bus is not None and run_id is not None:
-            runs_dir = child_runs_dir or self._runs_dir
-            if _ok("spawn_agent"):
-                registry.register(
-                    SpawnAgentTool(
-                        provider=provider,
-                        parent_bus=bus,
-                        parent_run_id=run_id,
-                        permission_manager=self._permission_manager,
-                        max_steps=self._config.agent.max_steps,
-                        task_registry=self._task_registry,
-                        runs_dir=runs_dir,
-                        session_id=session_id,
-                        depth=0,
-                    )
+        note_tool = NoteSaveTool(store, session.id, run_id)
+        if _ok(note_tool.name):
+            registry.register(note_tool)
+        runs_dir = child_runs_dir or self._runs_dir
+        if _ok("spawn_agent"):
+            registry.register(
+                SpawnAgentTool(
+                    provider=provider,
+                    parent_bus=bus,
+                    parent_run_id=run_id,
+                    permission_manager=self._permission_manager,
+                    max_steps=self._config.agent.max_steps,
+                    task_registry=self._task_registry,
+                    runs_dir=runs_dir,
+                    session_id=session_id,
+                    depth=0,
                 )
+            )
             if _ok("agent_result"):
                 registry.register(AgentResultTool(self._task_registry))
         if self._mcp_manager is not None:
@@ -135,12 +133,7 @@ class AgentRunner:
                     registry.register(mcp_tool)
         return registry
 
-    # # 执行一次完整的 agent run（委托给 run_and_capture，忽略返回值）
-    # async def run(self, goal: str, *, run_id: str | None = None) -> None:
-    #     await self.run_and_capture(goal, run_id=run_id)
-
     # 执行 agent run 并返回 RunOutcome（含最终文字结果）
-    # 总线控制
     async def run_and_capture(
         self,
         goal: str,
@@ -152,23 +145,17 @@ class AgentRunner:
         tool_whitelist: list[str] | None = None,
     ) -> RunOutcome:
 
-        # chat / one_shot 模式区分
-        is_chat = session is not None and store is not None
-        # is_one_shot = not is_chat
-
         run_id = run_id or new_run_id()
-        if is_chat:
-            run_path = store.runs_dir(session.id) / run_id
-            history = store.read_messages(session.id)
-            notes = store.read_notes(session.id)
-        else:
-            run_path = self._runs_dir / run_id
-            history = [{"role": "user", "content": goal}]
-            notes = ""
+
+        # 理论上都存在
+        assert session is not None and store is not None
+        
+        run_path = store.runs_dir(session.id) / run_id
+        history = store.read_messages(session.id)
+        notes = store.read_notes(session.id)
         run_path.mkdir(parents=True, exist_ok=True)
 
-        # 加载全局上下文和项目上下文
-        global_ctx = load_context_file(Path(".cogent/context.md").expanduser())
+        # 加载项目上下文
         project_ctx = load_context_file(Path(".cogent/context.md"))
         task_manager = TaskManager(run_path / ".tasks")
 
@@ -184,7 +171,6 @@ class AgentRunner:
             max_steps=self._config.agent.max_steps,
             prefill_messages=history,
             session_notes=notes,
-            global_context=global_ctx,
             project_context=project_ctx,
             system_prompt_override=system_prompt_override,
         )
@@ -210,11 +196,8 @@ class AgentRunner:
                         self._trace,
                         include_payload=self._config.trace.include_llm_payload,
                     )
-                session_id_str = session.id if is_chat else ""
-                # 确定子agent运行目录
-                child_runs_dir = (
-                    store.runs_dir(session.id) if is_chat else self._runs_dir
-                )
+                session_id_str = session.id
+                child_runs_dir = store.runs_dir(session.id)
                 # 构建工具注册表
                 registry = self._build_registry(
                     task_manager,
@@ -227,9 +210,7 @@ class AgentRunner:
                     session_id=session_id_str,
                     tool_whitelist=tool_whitelist,
                 )
-                session_dir = (
-                    store.session_dir(session.id) if is_chat else run_path
-                )
+                session_dir = store.session_dir(session.id)
                 # 构建上下文压缩器
                 compactor = Compactor(bus, session_dir, session_id_str)
                 loop = AgentLoop(
@@ -264,9 +245,7 @@ class AgentRunner:
                 )
             )
             
-        # 保存本次会话历史
-        if is_chat:
-            store.append_messages(session.id, context.messages[prefill_len:], run_id=run_id)
+        store.append_messages(session.id, context.messages[prefill_len:], run_id=run_id)
         
         # 等文件关闭之后再抛出，防止文件处于打开状态时进程被终止。
         if cancelled:

@@ -78,6 +78,8 @@ class SessionManager:
     async def send_message(self, sid: str, content: str, *, run_id: str | None = None) -> str:
         session = self._get_session(sid)
         lock = self._locks[sid]
+        
+        # 检查会话是否正在运行（理论上不该触发：客户端已经检查过）
         if lock.locked():
             raise HandlerError(SESSION_BUSY, "session busy")
 
@@ -87,7 +89,8 @@ class SessionManager:
 
             if session.status == "waiting_for_input":
                 await self._bus.publish(SessionResumedEvent(session_id=sid, ts=_now()))
-
+            
+            # 追加用户消息到 thread 并发布事件
             self._store.append_message(sid, "user", content)
             await self._bus.publish(
                 SessionMessageReceivedEvent(session_id=sid, content=content, ts=_now())

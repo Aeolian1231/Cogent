@@ -194,3 +194,26 @@ TUI 内部有一个永不退出的 _socket_loop 循环，TCP 断线后自动等�
 
 覆盖范围
 当前机制只覆盖同一 TUI 进程内的 TCP 断线重连、daemon崩溃重启。TUI 进程崩溃重启后内存全丢，_session_id 和 _active_run_id 都是 None，会走首次连接路径——新建 session、不回放历史、UI 空白。
+
+## AgentRunner 使用工厂模式
+
+每次 run 需要新实例
+每个 send_message 是一次全新的 Agent 执行，AgentRunner 内部持有本次 run 的状态（事件总线订阅、工具注册表、task_registry）。如果用同一个实例复用，上一轮的工具状态、事件监听会污染下一轮。工厂保证每次 factory() 调出一个干净的新 AgentRunner。
+
+## Agent 两层记忆
+
+thread.jsonl 记录的是完整对话过程：用户说了什么，assistant 返回了什么，工具调用了什么，工具结果是什么。它回答的是"上一轮发生过什么"。
+notes.md 记录的是 agent 主动保存的长期事实和决策，用于session内多轮对话的长期记忆。它回答的是"以后应该记住什么"。
+
+只有 thread 够不够？
+thread 是"历史流水"，notes 是"事实层"。当 thread 过长时，旧消息会被压缩成摘要。摘要可能漏掉某个细节，但 notes 不参与 compact，会原样注入 system prompt。
+
+## thread.jsonl 完整回放太浪费 token 了，为什么不只取最近 5 轮？
+
+问题在于滑动窗口看起来省钱，实际会破坏 agent 的连续性：
+1. 它可能截断 tool_use 和 tool_result 的配对，直接让 Anthropic API 拒绝请求。
+2. 它会丢掉旧工具结果，而旧工具结果可能正是下一轮回答的依据。
+3. 它把"哪些历史重要"这个判断提前交给工程代码，但这件事通常模型自己更擅长。
+
+cache_read_input_tokens 会承担大头。我们用缓存降低成本，而不是用工程截断破坏语义。
+完整回放不是偷懒，而是现代 agent 会话的基础策略：保留完整消息结构，让模型看到真实过程，再靠 prompt caching 控制成本。

@@ -11,7 +11,6 @@ class ExecutionContext:
     max_steps: int
     prefill_messages: list[dict[str, Any]] = field(default_factory=list)
     session_notes: str = ""
-    global_context: str = ""
     project_context: str = ""
     messages: list[dict[str, Any]] = field(default_factory=list)
     step: int = 0
@@ -31,8 +30,6 @@ class ExecutionContext:
     # 返回当前 run 的 system prompt；有 override 时跳过 base，直接注入记忆层
     def system_prompt(self, base: str) -> str:
         parts = [self.system_prompt_override if self.system_prompt_override else base]
-        if self.global_context.strip():
-            parts.append("\n\n## Global Context\n" + self.global_context.strip())
         if self.project_context.strip():
             parts.append("\n\n## Project Context\n" + self.project_context.strip())
         if self.session_notes.strip():

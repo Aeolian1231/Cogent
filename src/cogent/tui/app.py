@@ -372,7 +372,7 @@ class SlashCompleteWidget(Static):
 
 
 class ChatTextArea(TextArea):
-    """支持 Enter 提交、Cmd/Shift/Alt+Enter 换行的多行聊天输入框。"""
+    """支持 Enter 提交、Alt+Enter 换行的多行聊天输入框。"""
 
     DEFAULT_CSS = """
     ChatTextArea {
@@ -431,7 +431,7 @@ class ChatTextArea(TextArea):
             if self.text.strip():
                 self.post_message(self.Submitted(self))
             return
-        if key in ("alt+enter", "shift+enter", "ctrl+j", "super+enter"):
+        if key == "alt+enter":
             event.stop()
             event.prevent_default()
             if not self.read_only:
@@ -671,7 +671,7 @@ class CogentTuiApp(App[None]):
             if prompt is not None:
                 prompt.disabled = False
                 prompt.read_only = False
-                prompt.border_title = "type a message — enter to send, ⌘/⇧/⌥+enter for newline"
+                prompt.border_title = "type a message — enter to send, alt + enter for newline"
             self._update_header("ready")
             self._append(Static(f"[red]send error: {e}[/red]", classes="log-line"))
 
@@ -698,7 +698,7 @@ class CogentTuiApp(App[None]):
                 if p is not None:
                     p.disabled = False
                     p.read_only = False
-                    p.border_title = "type a message — enter to send, ⌘/⇧/⌥+enter for newline"
+                    p.border_title = "type a message — enter to send, alt+enter for newline"
                     p.focus()
         except Exception:
             log.exception("on_permission_select_decided failed tool_use_id=%s", tool_use_id)
@@ -833,7 +833,7 @@ class CogentTuiApp(App[None]):
                     if prompt is not None:
                         prompt.disabled = False
                         prompt.read_only = False
-                        prompt.border_title = "type a message — enter to send, ⌘/⇧/⌥+enter for newline"
+                        prompt.border_title = "type a message — enter to send, alt+enter for newline"
                         prompt.focus()
                     self._update_header("ready")
                 await loop_task
@@ -884,7 +884,7 @@ class CogentTuiApp(App[None]):
             if prompt is not None:
                 prompt.disabled = False
                 prompt.read_only = False
-                prompt.border_title = "type a message — enter to send, ⌘/⇧/⌥+enter for newline"
+                prompt.border_title = "type a message — enter to send, alt+enter for newline"
                 prompt.focus()
             self._update_header("ready")
 
@@ -1066,7 +1066,7 @@ class CogentTuiApp(App[None]):
                     if p is not None:
                         p.disabled = False
                         p.read_only = False
-                        p.border_title = "type a message — enter to send, ⌘/⇧/⌥+enter for newline"
+                        p.border_title = "type a message — enter to send, alt+enter for newline"
                         p.focus()
 
         elif t == "log.line":

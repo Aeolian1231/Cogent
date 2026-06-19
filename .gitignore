@@ -22,4 +22,6 @@ CLAUDE.md
 RUNBOOK.md
 WIRE_PROTOCOL.md
 tests/
-.cogent/
+.cogent/logs/
+.cogent/sessions/
+.cogent/traces/
