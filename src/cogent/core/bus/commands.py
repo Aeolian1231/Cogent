@@ -82,7 +82,7 @@ class SessionCloseResult(BaseModel):
 class PermissionRespondCommand(BaseModel):
     type: Literal["permission.respond"] = "permission.respond"
     tool_use_id: str
-    # "allow_once" | "always_allow" | "deny_once" | "always_deny"
+    # "allow_once" | "always_allow" | "deny_once" | "always_deny"（语义为 session 级，非持久化）
     decision: str
 
 

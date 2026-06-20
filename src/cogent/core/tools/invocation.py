@@ -92,7 +92,8 @@ async def invoke_tool(
             bus, run_id, tool_call,
             "runtime_error", f"unknown tool: {tool_call.name}", elapsed(),
         )
-
+        
+    # 校验参数
     if tool.params_model is not None:
         try:
             tool.params_model.model_validate(dict(tool_call.input))
@@ -114,6 +115,8 @@ async def invoke_tool(
             session_id=session_id,
             event_emitter=_emit_permission,
         )
+
+        # 对用户手动审批的权限，发布事件
         if allowed:
             if decision not in ("auto_allow",):
                 await bus.publish(
@@ -171,7 +174,7 @@ async def invoke_tool(
         except RateLimitedError as exc:
             error_class = "rate_limited"
             error_message = str(exc)
-        except TimeoutError:
+        except TimeoutError: # 超时不重试
             return await _fail(
                 bus, run_id, tool_call,
                 "timeout", f"tool timed out after {timeout}s", elapsed(),

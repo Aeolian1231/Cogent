@@ -140,14 +140,14 @@ async def test_always_allow_skips_future_ask() -> None:
     assert len(emitted) == 1  # only the first call emitted an event
 
 
-# 功能：验证 always_allow 在同一 manager 实例内对所有 session 生效（persistent_always 共享）
-# 设计：s1 设置 always_allow → 写入 _persistent_always；s2 命中 persistent 缓存，直接放行；
-#       emitted 只有 1 条（s2 不需要再 ASK）。这是 persistent always 的核心跨 session 语义。
+# 功能：验证 always_allow 仅本 session 生效，session 间隔离
+# 设计：s1 设置 always_allow for bash → s2 首次调用 bash 仍需 ASK 并发出新事件；
+#       always_allow 降级为 session 级后不再写 _persistent_always，跨 session 不共享
 async def test_always_allow_not_shared_across_sessions() -> None:
     mgr = _make_manager()
     emitted, emitter = await _collect_emitted()
 
-    # session s1 sets always allow for bash
+    # session s1 sets session-level allow for bash
     async def _auto_always() -> None:
         await asyncio.sleep(0)
         mgr.respond("t6", "always_allow")
@@ -160,16 +160,20 @@ async def test_always_allow_not_shared_across_sessions() -> None:
     )
     await task
 
-    # session s2 — persistent_always["bash"] = "allow" → 直接放行，不再 ASK
-    r, d = await mgr.check_and_wait(
-        tool_use_id="t7", tool_name="bash",
-        params={"command": "echo"}, session_id="s2",
-        event_emitter=emitter,
-    )
+    # session s2 — 无 session 缓存，无 persistent 缓存 → 进入 ASK
+    # 用 asyncio.wait_for 验证它在等待 Future 而非立即返回
+    emitted.clear()
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            mgr.check_and_wait(
+                tool_use_id="t7", tool_name="bash",
+                params={"command": "echo"}, session_id="s2",
+                event_emitter=emitter,
+            ),
+            timeout=0.05,
+        )
 
-    assert r is True
-    assert d == "auto_allow"
-    assert len(emitted) == 1  # s2 命中 persistent 缓存，不再发出事件
+    assert len(emitted) == 1  # s2 进入 ASK 路径，发出了 permission.requested 事件
 
 
 # ── always_deny cache ─────────────────────────────────────────────────────────
@@ -327,16 +331,16 @@ async def test_always_allow_does_not_bypass_outside_cwd() -> None:
     assert len(emitted) == 2  # 绝对路径命令再次触发 ASK，共 2 个事件
 
 
-# ── 持久化 always 写文件 ──────────────────────────────────────────────────────
+# ── 持久化策略仅由手动编辑 policy.toml 控制 ──────────────────────────────────
 
-# 功能：验证 always_allow 决策写入 policy_file，新 PermissionManager 加载后自动放行
-# 设计：用 tmp_path 作为 policy_file，断言文件存在且内容正确；
-#       再新建 manager 加载文件，同工具无需 ASK 直接返回 auto_allow
-async def test_persistent_always_written_and_reloaded(tmp_path: pytest.TempPathFixture) -> None:
+# 功能：验证 always_allow 不再写 policy_file，持久化策略仅由手动 policy.toml 提供
+# 设计：always_allow session 级 → 不写文件；手动创建 policy.toml 后新 manager 加载并自动放行
+async def test_persistent_policy_loaded_from_file_only(tmp_path: pytest.TempPathFixture) -> None:
     policy_file = tmp_path / "policy.toml"
     mgr = PermissionManager(policy_file=policy_file)
     emitted, emitter = await _collect_emitted()
 
+    # always_allow 只写 session 缓存，不写文件
     async def _auto_always() -> None:
         await asyncio.sleep(0)
         mgr.respond("tp1", "always_allow")
@@ -349,22 +353,34 @@ async def test_persistent_always_written_and_reloaded(tmp_path: pytest.TempPathF
     )
     await t
     assert allowed is True
-    assert policy_file.exists()
+    assert not policy_file.exists()  # always_allow 不再写文件
 
-    loaded = load_policy_file(policy_file)
-    assert loaded.get("bash") == "allow"
-
-    # 新 manager 加载同一文件，bash 应直接 auto_allow（无 OUTSIDE_CWD）
+    # 新 manager 加载空文件，bash 应再次进入 ASK
     mgr2 = PermissionManager(policy_file=policy_file)
     emitted2, emitter2 = await _collect_emitted()
-    allowed2, decision2 = await mgr2.check_and_wait(
-        tool_use_id="tp2", tool_name="bash",
-        params={"command": "echo new"}, session_id="s2",
-        event_emitter=emitter2,
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            mgr2.check_and_wait(
+                tool_use_id="tp2", tool_name="bash",
+                params={"command": "echo new"}, session_id="s2",
+                event_emitter=emitter2,
+            ),
+            timeout=0.05,
+        )
+    assert len(emitted2) == 1  # 再次 ASK
+
+    # 手动写入 policy.toml → 新 manager 加载后自动放行
+    policy_file.write_text('[always]\nbash = "allow"\n')
+    mgr3 = PermissionManager(policy_file=policy_file)
+    emitted3, emitter3 = await _collect_emitted()
+    allowed3, decision3 = await mgr3.check_and_wait(
+        tool_use_id="tp3", tool_name="bash",
+        params={"command": "echo hi"}, session_id="s3",
+        event_emitter=emitter3,
     )
-    assert allowed2 is True
-    assert decision2 == "auto_allow"
-    assert emitted2 == []  # 无需 ASK
+    assert allowed3 is True
+    assert decision3 == "auto_allow"
+    assert emitted3 == []  # 手动配置的策略自动放行
 
 
 # ── 审批超时 ──────────────────────────────────────────────────────────────────

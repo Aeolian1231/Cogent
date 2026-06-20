@@ -156,10 +156,10 @@ class PermissionSelect(Static):
     """
 
     _CHOICES: tuple[tuple[str, str, str], ...] = (
-        ("allow_once",   "Allow once",   "y / 1"),
-        ("always_allow", "Always allow", "a / 2"),
-        ("deny_once",    "Deny",         "n / 3"),
-        ("always_deny",  "Always deny",  "d / 4"),
+        ("allow_once",   "Allow once",    "y / 1"),
+        ("always_allow", "Allow session", "a / 2"),
+        ("deny_once",    "Deny once",     "n / 3"),
+        ("always_deny",  "Deny session",  "d / 4"),
     )
     _KEY_MAP: dict[str, str] = {
         "y": "allow_once",  "1": "allow_once",
@@ -253,9 +253,9 @@ class PermissionBlock(Static):
 
     _LABEL_MAP: dict[str, str] = {
         "allow_once":   "allowed (once)",
-        "always_allow": "always allowed",
-        "deny_once":    "denied",
-        "always_deny":  "always denied",
+        "always_allow": "allowed (session)",
+        "deny_once":    "denied (once)",
+        "always_deny":  "denied (session)",
         "timeout":      "⏱ timed out",
     }
     LABEL_MAP = _LABEL_MAP
