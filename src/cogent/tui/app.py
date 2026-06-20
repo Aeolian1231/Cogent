@@ -788,6 +788,7 @@ class CogentTuiApp(App[None]):
                     if not t.cancelled() and t.exception() is not None
                     else None
                 )
+                
                 # 先订阅事件，再创建 session。
                 # 如果反过来，daemon 可能已经广播了 session.created，客户端才开始订阅，第一条事件就丢了
                 params: dict[str, Any] = {   

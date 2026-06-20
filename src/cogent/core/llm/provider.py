@@ -17,6 +17,8 @@ _MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "claude-sonnet-4-6": 200_000,
     "claude-haiku-4-5-20251001": 200_000,
     "claude-opus-4-7": 200_000,
+    "deepseek-v4-flash": 1_000_000,
+    "deepseek-v4-pro": 1_000_000,
 }
 
 _MAX_STREAM_RETRIES = 3
@@ -126,6 +128,7 @@ class AnthropicProvider:
         usage = final_message.usage
         cache_read: int = getattr(usage, "cache_read_input_tokens", 0) or 0
         cache_create: int = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        # 历史上下文占上下文窗口比例，达到阈值时触发压缩
         context_pct = usage.input_tokens / _context_window(self._model)
 
         await bus.publish(

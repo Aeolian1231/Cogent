@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import select
 import sys
+import termios
+import tty
 from typing import Any
 
 from cogent.core.config import CogentConfig
@@ -70,10 +73,112 @@ class ChatPrinter:
             self._wakeup()
 
 
-# 在线程池中读取 stdin，避免阻塞 socket event loop
+# raw 模式下逐字节读取 stdin，自绘输入行
+def _readline_raw(prompt: str) -> str:
+    """raw 模式行读取器：完全绕过终端规范模式/Cooked 模式/readline，
+    自行处理 UTF-8 解码和退格显示，解决 CJK 宽字符退格异常。"""
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    chars: list[str] = []
+    utf8_buf = b""
+
+    def _redraw() -> None:
+        """清除当前逻辑行并重绘（含 prompt）。含 '\n' 时只绘制最后一次换行后的片段。"""
+        last_nl = -1
+        for i in range(len(chars) - 1, -1, -1):
+            if chars[i] == "\n":
+                last_nl = i
+                break
+        segment = chars[last_nl + 1:]
+        sys.stdout.write("\r\x1b[K")
+        sys.stdout.write(prompt if last_nl < 0 else "  ")
+        for c in segment:
+            sys.stdout.write(c)
+        sys.stdout.flush()
+
+    try:
+        tty.setraw(fd)
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+        while True:
+            b = sys.stdin.buffer.read(1)
+            if not b:
+                continue
+
+            # Enter — 提交当前行
+            if b in (b"\r", b"\n"):
+                sys.stdout.write("\r\n")
+                sys.stdout.flush()
+                break
+
+            # Backspace — 删除最后一个完整字符并重绘
+            if b == b"\x7f":
+                utf8_buf = b""
+                if chars:
+                    removed = chars.pop()
+                    if removed == "\n":
+                        # 跨行退格：光标上移一行并清除，再重绘当前片段
+                        sys.stdout.write("\x1b[A\x1b[K")
+                    _redraw()
+                continue
+
+            # Ctrl+C — 抛出中断
+            if b == b"\x03":
+                sys.stdout.write("^C\r\n")
+                sys.stdout.flush()
+                raise KeyboardInterrupt()
+
+            # Ctrl+D — 空行时 EOF
+            if b == b"\x04":
+                if not chars:
+                    sys.stdout.write("\r\n")
+                    sys.stdout.flush()
+                    raise EOFError()
+                continue
+
+            # ESC 前缀 — Alt+Enter 插入换行
+            if b == b"\x1b":
+                r, _, _ = select.select([fd], [], [], 0.01)
+                if r:
+                    b2 = sys.stdin.buffer.read(1)
+                    if b2 in (b"\r", b"\n"):
+                        chars.append("\n")
+                        sys.stdout.write("\r\n")
+                        sys.stdout.flush()
+                continue
+
+            # 累积 UTF-8 字节
+            utf8_buf += b
+            byte0 = utf8_buf[0]
+            if byte0 < 0x80:
+                expected = 1
+            elif byte0 < 0xE0:
+                expected = 2
+            elif byte0 < 0xF0:
+                expected = 3
+            else:
+                expected = 4
+
+            # 收齐完整字符后解码并回显
+            if len(utf8_buf) >= expected:
+                try:
+                    c = utf8_buf.decode("utf-8")
+                    chars.append(c)
+                    sys.stdout.write(c)
+                    sys.stdout.flush()
+                    utf8_buf = b""
+                except UnicodeDecodeError:
+                    utf8_buf = b""  # 损坏的序列，丢弃
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+    return "".join(chars)
+
+
+# 在线程池中调用 raw 模式读取，避免阻塞 socket event loop
 async def _readline(prompt: str) -> str:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, input, prompt)
+    return await loop.run_in_executor(None, _readline_raw, prompt)
 
 
 # 在后台发送一条消息到 session，不阻塞主输入循环
@@ -151,6 +256,23 @@ async def _chat_async(config: CogentConfig) -> int:
                     "permission.respond",
                     {"tool_use_id": tool_use_id, "decision": decision},
                 )
+                continue
+
+            # 手动压缩指令：调用 session.compact RPC，不走 agent run
+            if content == "/compact":
+                if printer.busy:
+                    print("  agent is running — compact is not available while running")
+                    continue
+                print("[compact] compacting context...")
+                try:
+                    result = await client.send_command(
+                        "session.compact",
+                        {"session_id": session_id, "focus": ""},
+                    )
+                    print(f"[compact] done — summary={result.get('summary_tokens', 0)} tokens "
+                          f"saved≈{result.get('saved_tokens', 0)} tokens")
+                except IpcError as e:
+                    print(f"[compact] error: {e}")
                 continue
 
             # agent 正在运行中但无待审批权限——提示用户等待

@@ -69,22 +69,25 @@ class Compactor:
         self._session_dir = session_dir
         self._session_id = session_id
 
-    # 压缩 ExecutionContext.messages，就地替换消息列表并写 summary 文件
+    # 压缩 ExecutionContext.messages，就地替换消息列表
     async def compact(
         self,
         context: ExecutionContext,
         provider: LLMProvider,
         focus: str = "",
     ) -> CompactionResult | None:
-        result = await self.compact_messages(context.messages, provider, focus=focus)
+        result = await self.compact_messages(
+            context.messages, provider, focus=focus, session_dir=self._session_dir,
+        )
         if result is None:
             return None
 
+        # 就地替换上下文消息
         context.messages = [
             {"role": "user", "content": result.summary_text},
             {"role": "assistant", "content": "Understood, I'll continue from this summary."},
         ]
-        self._write_summary(result.summary_text)
+
         await self._bus.publish(
             ContextCompactedEvent(
                 session_id=self._session_id,
@@ -101,19 +104,22 @@ class Compactor:
         )
         return result
 
-    # 纯函数式压缩：接收消息列表，返回 CompactionResult；失败时返回 None
+    # 压缩消息列表；session_dir 非空时写入 summary_<ts>.md
     async def compact_messages(
         self,
         messages: list[dict[str, Any]],
         provider: LLMProvider,
         focus: str = "",
+        *,
+        session_dir: Path | None = None,
     ) -> CompactionResult | None:
         from cogent.core.events.bus import EventBus as _Bus
 
         original_estimate = sum(
             len(str(m.get("content", ""))) for m in messages
-        ) // 4  # 粗略 token 估算（字符数 / 4）
+        ) // 4  # 粗略 token 估算（英文约 4 字符 = 1 token）
 
+        # 调用 LLM 压缩上下文
         history_text = _messages_to_text(messages)
         prompt = _COMPACT_PROMPT
         if focus.strip():
@@ -131,7 +137,7 @@ class Compactor:
                 bus=silent_bus,
                 run_id="compact",
                 step=0,
-                system="You are a helpful assistant that summarizes conversations.",
+                system="Now you are a helpful assistant that summarizes conversations.",
             )
         except Exception:
             logger.exception("compactor: LLM call failed, skipping compaction")
@@ -144,23 +150,28 @@ class Compactor:
 
         summary_tokens = response.usage.output_tokens if response.usage else len(summary_text) // 4
 
+        # 传入 session_dir 时落盘审计文件
+        if session_dir is not None:
+            _write_summary_file(session_dir, summary_text)
+
         return CompactionResult(
             summary_text=summary_text,
             original_token_estimate=original_estimate,
             summary_tokens=summary_tokens,
         )
 
-    # 将摘要文本写入 session 目录的 summary_<ts>.md
-    def _write_summary(self, text: str) -> None:
-        try:
-            self._session_dir.mkdir(parents=True, exist_ok=True)
-            path = self._session_dir / f"summary_{_ts_compact()}.md"
-            path.write_text(text, encoding="utf-8")
-        except Exception:
-            logger.exception("compactor: failed to write summary file")
+
+# 将摘要文本写入 session 目录的 summary_<ts>.md
+def _write_summary_file(session_dir: Path, text: str) -> None:
+    try:
+        session_dir.mkdir(parents=True, exist_ok=True)
+        path = session_dir / f"summary_{_ts_compact()}.md"
+        path.write_text(text, encoding="utf-8")
+    except Exception:
+        logger.exception("compactor: failed to write summary file")
 
 
-# 将消息列表序列化为可供 LLM 阅读的纯文本
+# 将消息列表 JSON 序列化为可供 LLM 阅读的纯文本
 def _messages_to_text(messages: list[dict[str, Any]]) -> str:
     parts: list[str] = []
     for msg in messages:

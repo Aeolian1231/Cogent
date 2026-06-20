@@ -100,7 +100,7 @@ class SocketClient:
                         )
                     else:
                         fut.set_result(msg.get("result") or {})
-        # 执行所有注册的 event handler
+        # 执行 event handler
         elif msg.get("kind") == "event":
             event_data: dict[str, Any] = msg.get("event", {})
             for handler in self._event_handlers:

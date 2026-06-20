@@ -98,6 +98,7 @@ class AgentLoop:
                         session_id=self._session_id,
                     )
                     context.add_tool_result(tc.id, result.content, is_error=result.is_error)
+            
             # max_tokens limit hit
             elif response.stop_reason == "max_tokens" and response.tool_calls:
                 # Output token limit hit mid-tool-call; input is incomplete.

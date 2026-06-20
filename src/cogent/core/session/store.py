@@ -92,7 +92,9 @@ class SessionStore:
             except json.JSONDecodeError:
                 logger.warning("skip broken thread row sid=%s line=%s", sid, line_no)
                 continue
+
             role = row.get("role")
+            # 只保留 role + content，因为 Anthropic API 不认识这些字段
             if role not in ("user", "assistant"):
                 logger.warning(
                     "skip unknown thread role sid=%s line=%s role=%s",
@@ -104,6 +106,8 @@ class SessionStore:
             messages.append({"role": role, "content": row.get("content", "")})
 
         messages = self._trim_orphan_tool_use(messages)
+
+        # tool 上下文压缩
         from cogent.core.compact.budget import truncate_tool_results
         return truncate_tool_results(messages)
 

@@ -14,20 +14,25 @@ def truncate_tool_results(
 ) -> list[dict[str, Any]]:
     result = []
     for msg in messages:
+        # tool_result 在 Anthropic 协议里是 user 消息
         if msg.get("role") != "user":
             result.append(msg)
             continue
         content = msg.get("content")
+
         if not isinstance(content, list):
             result.append(msg)
             continue
+
         new_blocks = []
         for block in content:
             if block.get("type") == "tool_result" and isinstance(block.get("content"), str):
                 text = block["content"]
+                # 对 tool_result 内容做内存截断
                 if len(text) > limit:
                     omitted = len(text) - keep
                     block = dict(block)
+                    # 保留前 4000 个字符，后面用省略号表示
                     block["content"] = (
                         text[:keep]
                         + f"\n[... {omitted} chars omitted. Full output in run events.]"

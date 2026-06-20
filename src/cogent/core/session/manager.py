@@ -178,7 +178,9 @@ class SessionManager:
             messages = self._store.read_messages(sid)
             session_dir = self._store.session_dir(sid)
             compactor = Compactor(self._bus, session_dir, sid)
-            result = await compactor.compact_messages(messages, self._provider, focus=focus)
+            result = await compactor.compact_messages(
+                    messages, self._provider, focus=focus, session_dir=session_dir
+                )
             if result is None:
                 raise HandlerError(-32021, "compaction failed or not beneficial")
             self._store.write_compacted(sid, [

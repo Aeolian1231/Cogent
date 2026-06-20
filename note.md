@@ -1,7 +1,9 @@
 ## question？
-当前实现两个终端分别启动tui会互相影响，cli也会影响tui，修改该问题
+当前实现两个终端分别启动tui会互相影响，cli 也会影响 tui，修改该问题
 
-客户端-daemon通信逻辑
+客户端-daemon 通信逻辑
+
+上下文达到阈值调用 LLM 全部压缩？
 
 ## 为什么使用 asyncio 协程而非多线程？
 
@@ -250,3 +252,13 @@ check_and_wait()                 _permission_respond_handler()
 方案	代码	                                           问题
 轮询	while id not in results: await sleep(0.1)	      CPU 空转，延迟 100ms
 回调	self._callbacks[id] = on_done	                  回调地狱，错误处理难
+
+## 上下文压缩 /compact 逻辑
+
+1. tool_result 截断，保留 4000 字符
+2. 自动compact，在一次 LLM 响应之后检查是否满足 compact 条件，调用compact()
+    compact()会替换当前所有历史消息，原地替换为压缩后的消息，保存到上下文缓存，不写入文件thread.jsonl
+    将压缩后的消息保存到 summary_<ts>.md
+3. 手动compact，在用户输入 /compact skill 调用compact_compact_messages()
+    compact_compact_messages()会替换当前所有历史消息，原地替换为压缩后的消息，写入文件thread.jsonl
+    将压缩后的消息保存到 summary_<ts>.md，并把原文件备份成.bak
